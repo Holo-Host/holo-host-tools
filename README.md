@@ -8,10 +8,6 @@ A collection of little tools for making it easier to work with Holo Host.
 2. Download the script (see below for links).
 3. Make it executable (you can do this in the terminal by typing `chmod +x <name_of_script>.rb`)
 
-## _Warning!!!_
-
-Both of these scripts contain Paul d’Aoust’s personal API keys for their corresponding services. Don’t share them outside the team!
-
 ## `holoport-whitelist`
 
 This tool lets you search and manipulate the whitelist from the CloudFlare K/V store. It’s much easier than paging through their horrible UI!
