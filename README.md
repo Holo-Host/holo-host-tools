@@ -6,7 +6,32 @@ A collection of little tools for making it easier to work with Holo Host.
 
 1. Make sure you have Ruby installed.
 2. Download the script (see below for links).
-3. Make it executable (you can do this in the terminal by typing `chmod +x <name_of_script>.rb`)
+3. Make it executable (you can do this in the terminal by typing `chmod +x <name_of_script>.rb`).
+4. Put it in a place where your computer can easily find it.
+    * Linux: `~/.local/bin`
+    * macOS: `/usr/local/bin` (requires admin privileges)
+5. Create two API tokens:
+    * A token that lets you access Holo's Worker K/V stores on Cloudflare. If you're going to be making modifications, make sure it has both read and write access. Remember the token; you'll use it below where you see `<your_cloudflare_api_token>`.
+    * A token that lets you access the Holo Host ZeroTier network. You'll use it below where you see `<your_zerotier_api_token>`.
+6. Get these three pieces of information from Holo TechOps:
+    * Holo's CloudFlare account ID. You'll use it below where you see `<holos_cloudflare_account_id>`.
+    * The CloudFlare Worker K/V namespace ID for the Holo Host whitelist. You'll use it below where you see `<holo_host_whitelist_namespace_id>`.
+    * The ZeroTier network ID for the Holo Host network. You'll use it below where you see `<holo_host_zerotier_network_id>`.
+7. Open up your system's terminal profile file in a text editor (replacing `<user>` with your actual username):
+    * Linux: `/home/<user>/.bash_profile`
+    * macOS (pre-Catalina): `/Users/<user>/.bash_profile`
+    * macOS (Catalina and later): `/Users/<user>/.zprofile`
+8. Add these five lines to the end of the terminal profile file (replacing the placeholders with the appropriate values):
+    ```
+    HOLOPORT_WHITELIST_CLOUDFLARE_TOKEN=<your_cloudflare_api_token>
+    HOLOPORT_WHITELIST_CLOUDFLARE_ACCOUNT=<holos_cloudflare_account_id>
+    HOLOPORT_WHITELIST_CLOUDFLARE_NAMESPACE=<holo_host_whitelist_namespace_id>
+    HOLO_ZEROTIER_TOKEN=<your_zerotier_api_token>
+    HOLO_ZEROTIER_NETWORK=<holo_host_zerotier_network_id>
+    ```
+9. Run this command to make the above configuration active:
+    * Linux and macOS (pre-Catalina): `source ~/.bash_profile`
+    * macOS (Catalina and later): `source ~/.zshrc`
 
 ## `holoport-whitelist`
 
