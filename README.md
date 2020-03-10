@@ -68,9 +68,19 @@ This tool lets you search and manipulate the whitelist from the CloudFlare K/V s
 
 #### Environment variables
 
-* `CLOUDFLARE_TOKEN`
+Put these variables into your `.profile` or `.bash_profile` file and you'll never have to specify them as flags.
 
-    Your CloudFlare API token. See the `--token` command-line flag for details. Put `export CLOUDFLARE_TOKEN=<token>` into your `.bashrc` file and you’ll never have to specify it as a flag.
+* `HOLO_WHITELIST_CLOUDFLARE_TOKEN`
+
+    Your CloudFlare API token. See the `--token` command-line flag for details.
+
+* `HOLOPORT_WHITELIST_CLOUDFLARE_ACCOUNT`
+
+    The ID of Holo's CloudFlare account. See the `--account` comand-line parameter for more details.
+
+* `HOLOPORT_WHITELIST_CLOUDFLARE_NAMESPACE`
+
+    The ID of the CloudFlare namespace that holds the namespace. See the `--namespace` command-line parameter for more details.
 
 ## `zerotier-members-list`
 
