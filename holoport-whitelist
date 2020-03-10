@@ -38,6 +38,17 @@ parser = OptionParser.new do |opts|
 Work with the HoloPort whitelist on CloudFlare.
 Usage:
 
+    holoport-whitelist list
+    holoport-whitelist list > whitelist.csv
+        Output all emails.
+        If you only want to output the malformed ones, use the --malformed-only
+        argument. Assumes the --no-format argument unless --malformed-only is
+        specified.
+
+    holoport-whitelist search email1@example.com email2@example.com
+    holoport-whitelist search < emails.txt
+        Search for one or more emails, attempting to find malformed variants.
+
     holoport-whitelist add email1@example.com email2@example.com
     holoport-whitelist add < emails.txt
         Add an email or email(s) to the whitelist. Automatically sanitises all
@@ -53,17 +64,6 @@ Usage:
         Try to fix all malformed emails in the whitelist by sanitising,
         removing, and adding the cleaned versions. Will give you a list of
         unfixable emails.
-
-    holoport-whitelist search email1@example.com email2@example.com
-    holoport-whitelist search < emails.txt
-        Search for one or more emails, attempting to find malformed variants.
-
-    holoport-whitelist list
-    holoport-whitelist list > whitelist.csv
-        Output all emails.
-        If you only want to output the malformed ones, use the --malformed-only
-        argument. Assumes the --no-format argument unless --malformed-only is
-        specified.
 
 Environment variables:
 
@@ -84,15 +84,15 @@ Command-line parameters:
 
 BANNER
 
-    opts.on('-t', '--token TOKEN', "The CloudFlare authorization token to use\n                                     for this call. Must have access to Holo's\n                                     K/V store, and must have write access if\n                                     adding, removing, or autofixing entries.\n\n") do |token|
+    opts.on('-t', '--token TOKEN', "The CloudFlare API token to use for this\n                                     call. Must have access to Holo's K/V store,\n                                     and must have write access if adding,\n                                     removing, or autofixing entries. If you\n                                     don't have one, please talk to Holo\n                                     TechOps.\n\n") do |token|
         $authorization_token = token
     end
 
-    opts.on('-a', '--account ACCOUNT', "The ID of Holo's CloudFlare account that\n                                     holds the whitelist.\n\n") do |account|
+    opts.on('-a', '--account ACCOUNT', "The ID of Holo's CloudFlare account that\n                                     holds the whitelist. If you don't know it,\n                                     please talk to Holo TechOps.\n\n") do |account|
         cloudflare_account = account
     end
 
-    opts.on('-n', '--namespace NAMESPACE', "The ID of the CloudFlare namespace that\n                                     holds the whitelist.\n\n") do |namespace|
+    opts.on('-n', '--namespace NAMESPACE', "The ID of the CloudFlare namespace that\n                                     holds the whitelist. If you don't know it,\n                                     please talk to Holo TechOps.\n\n") do |namespace|
         cloudflare_namespace = namespace
     end
 

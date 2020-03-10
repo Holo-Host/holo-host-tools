@@ -27,7 +27,11 @@ This tool lets you search and manipulate the whitelist from the CloudFlare K/V s
 * `holoport-whitelist > whitelist.csv`
 
     Export the whitelist to a file.
-    
+
+* `holoport-whitelist --malformed-only`
+
+    Only show malformed email addresses (upper-case or invalid characters).
+
 * `holoport-whitelist search email1@example.com email2@example.com`
 
     `holoport-whitelist search < emails-to-search-for.txt`
@@ -43,18 +47,30 @@ This tool lets you search and manipulate the whitelist from the CloudFlare K/V s
 * `holoport-whitelist remove bad-email@example.com`
 
     Remove an email address (and all the malformed variants it can find) from the whitelist.
-    
+
 * `holoport-whitelist autofix`
 
     Looks for all malformed emails and tries to fix them. If an email is too malformed, it’ll skip it.
 
-#### Flags
+#### Parameters
 
 * `--token <token>`
 
     `-t <token>`
-    
-    Your CloudFlare API token. This flag (or the corresponding environment variable; see below) is required for `add`, `remove`, or `autofix`. Must have read/write permissions on Holo’s K/V store.
+
+    The CloudFlare authorization token to use for this call. Must have access to Holo's K/V store, and must have write access if adding, removing, or autofixing entries. If you don't have one, please talk to Holo TechOps.
+
+* `--account <account_id>`
+
+    `-a <account_id>`
+
+    The ID of Holo's CloudFlare account that holds the whitelist. If you don't know it, please talk to Holo TechOps.
+
+* `--namespace <namespace_id>`
+
+    `-n <namespace_id>`
+
+    The ID of the CloudFlare namespace that holds the whitelist. If you don't know it, please talk to Holo TechOps.
 
 * `--malformed-only`
 
@@ -65,6 +81,18 @@ This tool lets you search and manipulate the whitelist from the CloudFlare K/V s
 * `--no-format`
 
     Most of the time malformed email addresses are highlighted to show their invalid characters and whether a properly formed variant exists in the whitelist. This turns that off. Valid for `list` (but only when `--malformed-only` is also specified), `search`, `remove`, and `autofix`.
+
+* `--accept`
+
+    `-y`
+
+    Say yes to every change instead of prompting.
+
+* `--dry-run`
+
+    `-n`
+
+    Say no to every change instead of prompting. Show what would be changed.
 
 #### Environment variables
 
@@ -91,7 +119,31 @@ This tool lets you get the email addresses of all currently registered HoloPort 
 * `zerotier-members-list > registered-holoports.csv`
 
     Export the list to a file.
-    
+
 * `zerotier-members-list | grep -i email_address@example.com`
 
     Quickly search the members list for a single email address.
+
+### Parameters
+
+* `--token <token>`
+
+    `-t <token>`
+
+    The CloudFlare API token to use for this call. Must have access to Holo's K/V store, and must have write access if adding, removing, or autofixing entries. If you don't have one, please talk to Holo TechOps.
+
+* `--network <network_id>`
+
+    `-n <network_id>`
+
+    The ID of the ZeroTier network that contains the HoloPorts. If you don't know it, you can get it from the TechOps team.
+
+### Environment variables
+
+* `HOLO_ZEROTIER_TOKEN`
+
+    The ZeroTier authorization token. See the `--token` command-line parameter for more details.
+
+* `HOLO_ZEROTIER_NETWORK`
+
+    The ID of the HoloPort ZeroTier network. See the `--network` command-line parameter for more details.
