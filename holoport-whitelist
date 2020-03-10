@@ -1,0 +1,439 @@
+#!/usr/bin/ruby
+
+require 'net/http'
+require 'json'
+require 'optparse'
+
+# We're being pretty restrictive about what constitutes a valid email here.
+# It doesn't cover the entire range of valid characters,
+# but it covers the range of realistic characters.
+# Notably, it doesn't allow capital letters.
+# This pattern is used simply to detect emails that shouldn't be in the whitelist.
+allowable_character_class = 'a-z0-9@.+_\\-'
+MALFORMED_PATTERN = Regexp.new("[^#{allowable_character_class}]")
+# And here's why it doesn't allow capital letters!
+# Because they, along with whitespace, can be auto-fixed.
+# In fixing, we normalise all capital letters to lowercase,
+# because in practice, case doesn't matter for email delivery.
+# And of course whitespace of all kinds should be stripped.
+FIXABLE_MALFORMED_PATTERN = Regexp.new("^\s*[A-Z#{allowable_character_class}]+\s*$")
+
+# Here's where we do setup...
+# 1. CloudFlare auth credentials and proper IDs,
+# which can be loaded from environment variables.
+$authorization_token = ENV.fetch('HOLO_WHITELIST_CLOUDFLARE_TOKEN', nil)
+cloudflare_account = ENV.fetch('HOLO_WHITELIST_CLOUDFLARE_ACCOUNT', nil)
+cloudflare_namespace = ENV.fetch('HOLO_WHITELIST_CLOUDFLARE_NAMESPACE', nil)
+
+# 2. Command-line flags, some of which apply to the above and override environment variables.
+malformed_only = false
+format_malformed = true
+override_sanitization = false
+
+# 3. Parse command-line flags.
+parser = OptionParser.new do |opts|
+    opts.banner = <<-BANNER
+Work with the HoloPort whitelist on CloudFlare.
+Usage:
+
+    holoport-whitelist add email1@example.com email2@example.com
+    holoport-whitelist add < emails.txt
+        Add an email or email(s) to the whitelist. Automatically sanitises all
+        supplied emails.
+
+    holoport-whitelist remove email1@example.com email2@example.com
+    holoport-whitelist remove < emails.txt
+        Remove an email or email(s) to the whitelist. Automatically searches for
+        and removes all malformed variants, within reason. If you only want to
+        remove the malformed ones, use the --malformed-only argument.
+
+    holoport-whitelist autofix
+        Try to fix all malformed emails in the whitelist by sanitising,
+        removing, and adding the cleaned versions. Will give you a list of
+        unfixable emails.
+
+    holoport-whitelist search email1@example.com email2@example.com
+    holoport-whitelist search < emails.txt
+        Search for one or more emails, attempting to find malformed variants.
+
+    holoport-whitelist list
+    holoport-whitelist list > whitelist.csv
+        Output all emails.
+        If you only want to output the malformed ones, use the --malformed-only
+        argument. Assumes the --no-format argument unless --malformed-only is
+        specified.
+
+Environment variables:
+
+    HOLO_WHITELIST_CLOUDFLARE_TOKEN     Your CloudFlare authorization token. See
+                                        the --token command-line parameter for
+                                        more details.
+
+    HOLO_WHITELIST_CLOUDFLARE_ACCOUNT   The ID of Holo's CloudFlare account. See
+                                        the --account comand-line parameter for
+                                        more details.
+
+    HOLO_WHITELIST_CLOUDFLARE_NAMESPACE The ID of the CloudFlare namespace that
+                                        holds the namespace. See the --namespace
+                                        command-line parameter for more details.
+
+Command-line parameters:
+
+BANNER
+
+    opts.on('-t', '--token TOKEN', "The CloudFlare authorization token to use\n                                     for this call. Must have access to Holo's\n                                     K/V store, and must have write access if\n                                     adding, removing, or autofixing entries.\n\n") do |token|
+        $authorization_token = token
+    end
+
+    opts.on('-a', '--account ACCOUNT', "The ID of Holo's CloudFlare account that\n                                     holds the whitelist.\n\n") do |account|
+        cloudflare_account = account
+    end
+
+    opts.on('-n', '--namespace NAMESPACE', "The ID of the CloudFlare namespace that\n                                     holds the whitelist.\n\n") do |namespace|
+        cloudflare_namespace = namespace
+    end
+
+    opts.on('-m', '--malformed-only', "Search or remove malformed emails only.\n\n") do ||
+        malformed_only = true
+    end
+
+    opts.on('--no-format', "Don't highlight characters when outputting\n                                     malformed emails.\n\n") do ||
+        format_malformed = false
+    end
+
+    opts.on('--override-sanitization', 'DON\'T EVER USE THIS. For debugging only.') do ||
+        override_sanitization = true
+    end
+end
+
+# 4. Now that we're done parsing, remove the flags from argv,
+# so we can read the action and the things passed into it.
+# There are five actions:
+# * add:        Add email(s) to the whitelist.
+# * remove:     Remove email(s) from the whitelist.
+# * autofix:    Look for all malformed whitelist emails that can be automatically fixed,
+#               and automatically fix them.
+# * search:     Search for email(s), including possible malformed variants.
+# * list:       List all emails in the whitelist, optionally filtering to malformed only.
+$argv = parser.parse(ARGV)
+
+# Handle missing required options.
+at_least_one_missing_required_option = false
+if $authorization_token.nil? or $authorization_token.empty?
+    STDERR.puts <<-MSG
+* Please supply a CloudFlare authorization token. If you don't have one, please
+  talk to Holo TechOps. This token will need to have access to the Holo Host
+  whitelist.
+MSG
+    at_least_one_missing_required_option = true
+end
+if cloudflare_account.nil? or cloudflare_account.empty?
+    STDERR.puts <<-MSG
+* Please supply Holo's CloudFlare account ID. If you don't know it, please talk
+  to Holo TechOps.
+MSG
+    at_least_one_missing_required_option = true
+end
+if cloudflare_namespace.nil? or cloudflare_namespace.empty?
+    STDERR.puts <<-MSG
+* Please supply the namespace ID for the HoloPort whitelist. If you don't know
+  it, please talk to Holo TechOps.
+MSG
+    at_least_one_missing_required_option = true
+end
+abort if at_least_one_missing_required_option
+
+# Set up all the HTTP stuff.
+$cf_whitelist_api_base_url = URI("https://api.cloudflare.com/client/v4/accounts/#{cloudflare_account}/storage/kv/namespaces/#{cloudflare_namespace}/")
+
+# What are we actually doing?
+action = (if $argv.length > 0 then $argv[0] else 'list' end)
+
+def do_request(request_type, url, request_body = nil)
+    full_url = $cf_whitelist_api_base_url.request_uri + url
+    request = request_type.new(full_url)
+    request['Authorization'] = "Bearer #{$authorization_token}"
+    request['Content-Type'] = 'application/json'
+    http = Net::HTTP.new($cf_whitelist_api_base_url.host, $cf_whitelist_api_base_url.port)
+    http.use_ssl = true
+    http.request(request, request_body)
+end
+
+# Here's where we actually access the CloudFlare API and get the whitelist.
+def get_whitelisted_emails
+    # The key/value store is paginated, so we paginate through until we run out of results.
+    cursor = nil
+    emails = []
+    while true
+        url = 'keys?limit=1000' + (if cursor == nil then '' else '&cursor=' + cursor end)
+        response = do_request(Net::HTTP::Get, url)
+        result = handle_response(response, nil)
+        break if result['result_info']['count'] == 0
+        result['result'].each do |kv|
+            emails << kv['name']
+        end
+        cursor = result['result_info']['cursor']
+        break if cursor == ''
+    end
+    emails
+end
+
+# Sort emails into valid and malformed emails.
+# Bonus: an extra list that shows which malformed emails have a valid variant.
+# These are ones that can be auto-fixed.
+def get_whitelisted_emails_sorted_into_clean_and_malformed
+    whitelist = get_whitelisted_emails
+    malformed = whitelist.select{ |email| MALFORMED_PATTERN.match?(email) }
+    clean = whitelist - malformed
+    malformed_with_corresponding_clean = malformed.select{ |email| clean.include?(sanitize_email(email)) }
+    {
+        'all' => whitelist,
+        'clean' => clean,
+        'malformed' => malformed,
+        'malformed_with_corresponding_clean' => malformed_with_corresponding_clean
+    }
+end
+
+# Parse the list of emails, supplied either by command-line or STDIN.
+def get_supplied_emails
+    emails = nil
+    if $argv.length == 1
+        # No emails passed on command line; read from STDIN instead.
+        emails_raw = STDIN.read
+        emails = emails_raw.split(/\s/)
+    else
+        # Emails passed on command line.
+        emails = $argv.drop(1)
+    end
+    emails.reject!{ |email| email.empty? }
+    if emails.empty?
+        STDERR.puts('Please supply at least one email as an argument or via STDIN.')
+        abort
+    end
+    emails
+end
+
+# Wait until the user presses 'y', otherwise abort the program.
+def get_confirmation_first
+    STDERR.print 'Continue? [y/N] '
+    confirm = $stdin.gets.strip.downcase
+    if confirm != 'y'
+        STDERR.puts 'Cancelled.'
+        abort
+    end
+end
+
+# Clean up a potentially malformed email.
+# Don't fail on unfixable problems.
+def sanitize_email(email)
+    email.gsub(/^\s|\s$/, '').downcase
+end
+
+# Add terminal highlighting to a string.
+def make_red(str)
+    "\033[41m" + str + "\033[0m"
+end
+
+# Call the CloudFlare K/V API to add emails to the whitelist.
+# All emails should have already been validated and sanitised.
+def add_emails(emails)
+    request_body = emails.map{ |email| {'key' => email, 'value' => '{}'} }.to_json
+    response = do_request(Net::HTTP::Put, 'bulk', request_body)
+    handle_response(response, emails.length.to_s + ' email(s) whitelisted.', 'Couldn\'t whitelist email(s).')
+end
+
+# Call the CloudFlare K/V API to remove emails from the whitelist.
+# All emails should have already been validated and sanitised.
+def remove_emails(emails)
+    request_body = emails.to_json
+    response = do_request(Net::HTTP::Delete, 'bulk', request_body)
+    handle_response(response, emails.length.to_s + ' email(s) removed.')
+end
+
+# Helper function to turn a list of emails into a regex for searching the whitelist.
+# Matches on fixable malformed variants too.
+def emails_to_search_pattern(emails, insensitive = true)
+    # When searching for emails
+    # (to check if an email is whitelisted or to remove it),
+    # we want to match all possible mis-typings of the supplied emails,
+    # such as leading/trailing whitespace or capital letters.
+    emails_clean = emails.map{ |email| sanitize_email(email) }
+    emails += emails_clean
+    emails.uniq!
+    Regexp::new('^\\s*(' + emails.map{ |email| Regexp::escape(email) }.join('\\s*|\\s*') + ')\\s*$', insensitive)
+end
+
+# Print out a list of emails.
+def output_emails(
+    emails,
+    # Where to print to?
+    stream = $stdout,
+    # Prepend each line with this string.
+    prefix: '    ',
+    # Mark up malformed characters with red highlighting.
+    format_malformed: true,
+    # When format_malformed is true, a note will be added for each fixable malformed email
+    # whose clean version appears in this list.
+    malformed_with_corresponding_clean: []
+)
+    # The invalid characters are highlighted in red.
+    red_replace = make_red('\\0')
+    show_helpful_message_about_highlighting = false
+    emails.each do |email|
+        line = email
+        if format_malformed and MALFORMED_PATTERN.match?(email)
+            show_helpful_message_about_highlighting = true
+            # Special formatting for tabs and carriage returns -- show symbol.
+            # Also add '(clean entry exists)' whenever applicable.
+            line = email.gsub(MALFORMED_PATTERN, red_replace).gsub("\t", '⇥').gsub("\n", '↵') + (if malformed_with_corresponding_clean.include?(email) then " \033[2m\033[3m(clean entry exists)\033[0m" else '' end)
+        end
+        # The reason we don't use stream.puts here is that it collapses double carriage returns.
+        # We want them to remain there so we can catch them.
+        stream.print prefix + line + "\n"
+    end
+    if show_helpful_message_about_highlighting
+        # If any emails had malformed characters, print a helpful legend at the end.
+        STDERR.puts 'Note: ' + make_red('red highlighting') + ' indicates a malformed character.'
+    end
+end
+
+# Handle a CloudFlare API response.
+# THey all have a similar format.
+def handle_response(response, success_message = 'Success!', failure_message = 'Failed!')
+    result = JSON.parse(response.body)
+    if not result['errors'].nil? and not result['errors'].empty?
+        STDERR.puts 'Errors:'
+        result['errors'].each do |e|
+            STDERR.puts '    [' + e['code'].to_s + '] ' + e['message']
+        end
+    end
+    if not result['message'].nil? and not result['messages'].empty?
+        STDERR.puts 'Additional messages:'
+        result['messages'].each do |m|
+            STDERR.puts '    ' + m
+        end
+    end
+    if result['success'] then
+        STDERR.puts success_message if not (success_message.nil? or success_message.empty?)
+    else
+        STDERR.puts failure_message if not (failure_message.nil? or failure_message.empty?)
+        abort
+    end
+
+    result
+end
+
+# Now that all the functions are defined, it's time to process the actions!
+case action
+when 'add'
+    emails_to_whitelist = get_supplied_emails
+    if override_sanitization
+        malformed = emails_to_whitelist.select{ |email| MALFORMED_PATTERN.match?(email) }
+        if not malformed.empty?
+            STDERR.puts 'WARNING! Overriding sanitization for the following emails:'
+            output_emails(malformed, format_malformed: format_malformed)
+        end
+    else
+        emails_to_whitelist.map!{ |email| sanitize_email(email) }.reject!{ |email| email.empty? }
+        if emails_to_whitelist.empty?
+            STDERR.puts('Please supply at least one email as an argument or via STDIN.')
+            abort
+        end
+        # All malformed-but-fixable emails should have been cleaned by now,
+        # so any remaining malformed ones should throw an error.
+        unfixable = emails_to_whitelist.select{ |email| MALFORMED_PATTERN.match?(email) }
+        if not unfixable.empty?
+            STDERR.puts('Malformed emails:')
+            output_emails(unfixable, $stderr, format_malformed: format_malformed)
+            STDERR.puts('Please fix and try again.')
+            abort
+        end
+    end
+    add_emails(emails_to_whitelist)
+
+when 'remove'
+    emails_to_remove = get_supplied_emails
+    if emails_to_remove.empty?
+        STDERR.puts 'Please supply at least one email as an argument or via STDIN.'
+        abort
+    end
+    whitelist = get_whitelisted_emails_sorted_into_clean_and_malformed
+    whitelist_to_remove_from = if malformed_only
+        whitelist['malformed']
+    else
+        whitelist['all']
+    end
+    # Perform fuzzy removal on suppied emails:
+    # * malformed emails (exact match or fuzzy matched)
+    # * partially fixed variants of unfixable malformed emails
+    # * fully fixed variants of unfixable malformed emails
+    # * clean emails
+    search_pattern = emails_to_search_pattern(emails_to_remove)
+    matched_emails_to_remove = whitelist_to_remove_from.select{ |email| search_pattern.match?(email) }
+    if matched_emails_to_remove.empty?
+        STDERR.puts 'No matched emails to remove.'
+        abort
+    end
+
+    STDERR.puts 'About to remove emails:'
+    output_emails(matched_emails_to_remove, $stderr, format_malformed: format_malformed, malformed_with_corresponding_clean: whitelist['malformed_with_corresponding_clean'])
+    get_confirmation_first
+    remove_emails(matched_emails_to_remove)
+
+when 'autofix'
+    whitelist = get_whitelisted_emails_sorted_into_clean_and_malformed
+    fixable_malformed = whitelist['malformed'].select{ |email| FIXABLE_MALFORMED_PATTERN.match?(email) }
+    emails_to_add = (fixable_malformed - whitelist['malformed_with_corresponding_clean']).map{ |email| sanitize_email(email) }
+    emails_to_remove = fixable_malformed
+    unfixable_malformed = whitelist['malformed'] - fixable_malformed
+    if not emails_to_add.empty?
+        STDERR.puts 'About to add emails:'
+        output_emails(emails_to_add, $stderr, format_malformed: format_malformed)
+    end
+    if not emails_to_remove.empty?
+        STDERR.puts 'About to remove emails:'
+        output_emails(emails_to_remove, $stderr, format_malformed: format_malformed, malformed_with_corresponding_clean: whitelist['malformed_with_corresponding_clean'])
+    end
+    if not unfixable_malformed.empty?
+        STDERR.puts 'Unable to auto-fix:'
+        output_emails(unfixable_malformed, format_malformed: format_malformed)
+    end
+    if emails_to_add.empty? and emails_to_remove.empty?
+        STDERR.puts 'Nothing to do.'
+        abort
+    end
+    get_confirmation_first
+    add_emails(emails_to_add)
+    remove_emails(emails_to_remove)
+
+when 'search'
+    whitelist = get_whitelisted_emails_sorted_into_clean_and_malformed
+    whitelist_to_search = if malformed_only
+        whitelist['malformed']
+    else
+        whitelist['all']
+    end
+    emails_to_look_for = get_supplied_emails
+    search_pattern = emails_to_search_pattern(emails_to_look_for)
+    found_emails = whitelist_to_search.select{ |email| search_pattern.match?(email) }
+    found_emails_clean = found_emails.map{ |email| sanitize_email(email) }
+    not_found_emails = emails_to_look_for - found_emails_clean
+    if found_emails.length > 0
+        output_emails(found_emails, prefix: 'Found: ', format_malformed: format_malformed)
+    end
+    if not_found_emails.length > 0
+        output_emails(not_found_emails, prefix: 'Not found: ', format_malformed: format_malformed)
+    end
+
+else
+    # Default case of 'list', implied when no action given.
+    if malformed_only
+        whitelist = get_whitelisted_emails_sorted_into_clean_and_malformed
+        malformed = whitelist['malformed']
+        malformed_with_corresponding_clean = whitelist['malformed_with_corresponding_clean']
+        output_emails(malformed, prefix: '', format_malformed: format_malformed, malformed_with_corresponding_clean: malformed_with_corresponding_clean)
+    else
+        whitelist = get_whitelisted_emails
+        puts whitelist.join "\n"
+    end
+end

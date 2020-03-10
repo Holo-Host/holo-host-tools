@@ -1,0 +1,73 @@
+#!/usr/bin/ruby
+
+require "net/http"
+require "json"
+require "optparse"
+
+authorization_token = ENV.fetch('HOLO_ZEROTIER_TOKEN', nil)
+zerotier_network = ENV.fetch('HOLO_ZEROTIER_NETWORK', nil)
+parser = OptionParser.new do |opts|
+    opts.banner = <<-BANNER
+Work with the HoloPort ZeroTier network. Get stats on registered and connected
+devices.
+Usage:
+
+    zerotier-members-list
+    zerotier-members-list > zerotier.csv
+        Display the email addresses of all registered devices on the ZeroTier
+        network.
+
+Environment variables:
+
+    HOLO_ZEROTIER_TOKEN     The ZeroTier authorization token. See the --token
+                            command-line parameter for more details.
+
+    HOLO_ZEROTIER_NETWORK   The ID of the HoloPort ZeroTier network. See the
+                            --network command-line parameter for more details.
+
+Command-line parameters:
+
+BANNER
+
+    opts.on('-t', '--token TOKEN', "The ZeroTier authorization token to use for\n                                     this call. Must have access to Holo\'s\n                                     ZeroTier network.\n\n") do |token|
+        authorization_token = token
+    end
+
+    opts.on('-n', '--network NETWORK', "The ID of the ZeroTier network that\n                                     contains the HoloPorts. If you don't know\n                                     it, you can get it from the TechOps team.") do |network|
+        zerotier_network = network
+    end
+end
+# Remove command-line option(s) from argv, so we can read the command and the things passed into the command.
+$argv = parser.parse(ARGV)
+
+at_least_one_missing_required_option = false
+if authorization_token.nil? or authorization_token.empty?
+    STDERR.puts <<-MSG
+* Please supply a ZeroTier authorization token with access to the HoloPort
+  network. If you don't have one, please talk to TechOps for help.
+MSG
+    at_least_one_missing_required_option = true
+end
+if zerotier_network.nil? or zerotier_network.empty?
+    STDERR.puts <<-MSG
+* Please supply the ZeroTier network ID for the HoloPort network. If you don't
+  know it, please talk to TechOps for help.
+MSG
+    at_least_one_missing_required_option = true
+end
+abort if at_least_one_missing_required_option
+
+zerotier_members_api_url = URI("https://my.zerotier.com/api/network/#{zerotier_network}/member")
+http = Net::HTTP.new(zerotier_members_api_url.host, zerotier_members_api_url.port)
+http.use_ssl = true
+request = Net::HTTP::Get.new(zerotier_members_api_url.request_uri)
+# Note: This bearer token belongs to Paul d'Aoust!!!!!
+request['Authorization'] = "Bearer #{authorization_token}"
+response = http.request(request)
+
+members_list = JSON.parse(response.body)
+members_list.each do |member|
+    if member['description'].length > 0
+        puts member['description']
+    end
+end
