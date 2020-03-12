@@ -175,7 +175,7 @@ This tool lets you get the email addresses of all currently registered HoloPort 
 
 ## Installation (for both commands)
 
-1. Download the script (see below for links).
+1. Download the script (look in the `src` folder of this repository).
 2. Make it executable (you can do this in the terminal by typing `chmod +x <name_of_script>`).
 3. Put it in a place where your computer can easily find it.
     * macOS: `/usr/local/bin` (requires admin privileges)
