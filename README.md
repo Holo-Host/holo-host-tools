@@ -96,11 +96,11 @@ Put these variables into your `.profile` or `.bash_profile` file and you'll neve
 
     Your CloudFlare API token. See the `--token` command-line flag for details.
 
-* `HOLOPORT_WHITELIST_CLOUDFLARE_ACCOUNT`
+* `HOLO_WHITELIST_CLOUDFLARE_ACCOUNT`
 
     The ID of Holo's CloudFlare account. See the `--account` comand-line parameter for more details.
 
-* `HOLOPORT_WHITELIST_CLOUDFLARE_NAMESPACE`
+* `HOLO_WHITELIST_CLOUDFLARE_NAMESPACE`
 
     The ID of the CloudFlare namespace that holds the namespace. See the `--namespace` command-line parameter for more details.
 
@@ -186,9 +186,9 @@ This tool lets you get the email addresses of all currently registered HoloPort 
     * macOS (Catalina and later): `/Users/<user>/.zprofile`
 5. Add these five lines to the end of the terminal profile file (replacing the placeholders with the appropriate values):
     ```
-    HOLOPORT_WHITELIST_CLOUDFLARE_TOKEN=<your_cloudflare_api_token>
-    HOLOPORT_WHITELIST_CLOUDFLARE_ACCOUNT=<holos_cloudflare_account_id>
-    HOLOPORT_WHITELIST_CLOUDFLARE_NAMESPACE=<holo_host_whitelist_namespace_id>
+    HOLO_WHITELIST_CLOUDFLARE_TOKEN=<your_cloudflare_api_token>
+    HOLO_WHITELIST_CLOUDFLARE_ACCOUNT=<holos_cloudflare_account_id>
+    HOLO_WHITELIST_CLOUDFLARE_NAMESPACE=<holo_host_whitelist_namespace_id>
     HOLO_ZEROTIER_TOKEN=<your_zerotier_api_token>
     HOLO_ZEROTIER_NETWORK=<holo_host_zerotier_network_id>
     ```

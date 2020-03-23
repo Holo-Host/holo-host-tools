@@ -21,9 +21,9 @@ FIXABLE_MALFORMED_PATTERN = Regexp.new("^\s*[A-Z#{allowable_character_class}]+\s
 # Here's where we do setup...
 # 1. CloudFlare auth credentials and proper IDs,
 # which can be loaded from environment variables.
-$authorization_token = ENV.fetch('HOLOPORT_WHITELIST_CLOUDFLARE_TOKEN', nil)
-cloudflare_account = ENV.fetch('HOLOPORT_WHITELIST_CLOUDFLARE_ACCOUNT', nil)
-cloudflare_namespace = ENV.fetch('HOLOPORT_WHITELIST_CLOUDFLARE_NAMESPACE', nil)
+$authorization_token = ENV.fetch('HOLO_WHITELIST_CLOUDFLARE_TOKEN', nil)
+cloudflare_account = ENV.fetch('HOLO_WHITELIST_CLOUDFLARE_ACCOUNT', nil)
+cloudflare_namespace = ENV.fetch('HOLO_WHITELIST_CLOUDFLARE_NAMESPACE', nil)
 
 # 2. Command-line flags, some of which apply to the above and override environment variables.
 malformed_only = false
@@ -67,15 +67,15 @@ Usage:
 
 Environment variables:
 
-    HOLOPORT_WHITELIST_CLOUDFLARE_TOKEN     Your CloudFlare API token. See the
+    HOLO_WHITELIST_CLOUDFLARE_TOKEN         Your CloudFlare API token. See the
                                             --token command-line parameter for
                                             more details.
 
-    HOLOPORT_WHITELIST_CLOUDFLARE_ACCOUNT   The ID of Holo's CloudFlare account.
+    HOLO_WHITELIST_CLOUDFLARE_ACCOUNT       The ID of Holo's CloudFlare account.
                                             See the --account comand-line
                                             parameter for more details.
 
-    HOLOPORT_WHITELIST_CLOUDFLARE_NAMESPACE The ID of the CloudFlare namespace
+    HOLO_WHITELIST_CLOUDFLARE_NAMESPACE     The ID of the CloudFlare namespace
                                             that holds the namespace. See the
                                             --namespace command-line parameter
                                             for more details.
